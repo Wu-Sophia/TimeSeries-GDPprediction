@@ -1,0 +1,109 @@
+---
+title: "Untitled"
+author: "Sophia Wu"
+date: "7/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+```{r}
+install.packages("ggpubr")
+```
+
+
+```{r}
+library("ggpubr")
+```
+
+```{r}
+knitr::opts_chunk$set(echo = FALSE)
+library(tm)
+library(tidyr)
+library(dplyr)
+library(tidyverse)
+library(e1071)
+library(caret)
+library(ggplot2)
+library(kableExtra)
+library(class)
+library(modelr)
+library(GGally)
+library(corrplot)
+library(readxl)
+library(ggthemes)
+library(skimr)
+
+theme_set(theme_excel())
+```
+
+```{r}
+gdp <- read.csv("~/DS 7374 Business analytics/DS 7374 project/GDP&transportation.csv")
+
+
+head(gdp)
+
+```
+```{r}
+testdata <- read.csv("~/DS 7374 Business analytics/DS 7374 project/testdata.csv")
+head(testdata)
+```
+
+```{r}
+# visualize GDPA and expenditures.of.transportation
+gdp %>% ggplot(aes(x = expenditures.of.transportation, y = GDPA)) + geom_point() + ggtitle( "expenditures.of.transportation v. GDPA") + geom_smooth(method = "lm")+theme(panel.background = element_rect(fill = 'lightblue')) 
+                    
+```
+```{r}
+cor(gdp$expenditures.of.transportation, gdp$GDPA, method = c("pearson", "kendall", "spearman"))
+cor.test(gdp$expenditures.of.transportation, gdp$GDPA, method=c("pearson", "kendall", "spearman"))
+```
+
+
+```{r}
+fit = lm(GDPA~expenditures.of.transportation, data = gdp)
+summary(fit)
+confint(fit)
+```
+#Interpretation of the model
+
+## Coefficients:
+                               Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)                    -132.984     93.161  -1.427    0.159    
+#expenditures.of.transportation  130.680      1.249 104.622   <2e-16 ***
+## ---
+## Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+#B0 =  -132.984  (Y- intercept)
+#B1 =  130.680 (Age coefficient)
+#GDP=-132.984 +  130.680 EXPEN OF TRANSPORTATION
+
+```{r}
+testdata$GDPA = predict(fit, newdata = testdata)
+
+finalOutput <- testdata %>% select(DATE,GDPA,expenditures.of.transportation)
+
+write.csv(finalOutput, file ="Predictionsgdp.csv", row.names = FALSE)
+
+
+```
+
+
