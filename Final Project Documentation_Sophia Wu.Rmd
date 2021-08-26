@@ -1,0 +1,499 @@
+---
+title: "GDP change analysis"
+author: "Sophia Wu"
+date: '`r Sys.time()`'
+output:
+  html_document:
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+  word_document:
+    toc: yes
+    toc_depth: '6'
+  github_document:
+    toc: yes
+    toc_depth: 6
+  pdf_document:
+    toc: yes
+    toc_depth: '6'
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# *******Libraries*******
+```{r message=FALSE, warning=FALSE}
+library(tswge)
+library(tidyverse)
+library(ggplot2)
+library(tseries)
+library(kableExtra)
+library(knitr)
+library(plotly)
+library(vars)
+library(vars)
+library(nnfor)
+library(xts)
+library(GGally)
+library(astsa)
+library(nnfor)
+library(forecast)
+```
+
+#  *******Introduction*******
+From Federal Reserve Economic Data, we see GDP changes every year.What is the economic cycle in the US? Are we able to predict the GDP change? Are there any significant variables causing GDP changes? Using Time series will help us analyze the important insights and predict the future trend.
+
+
+#  *******Data Source*******
+All data was downloaded from [Federal Reserve Economic Data (FRED) Repository](https://fred.stlouisfed.org/) It contains 75 years quarterly data from 1947 to 2021, 6 variables listed below:
+6 columns as below:
+*Date;
+*GDP per capita;
+*Income receipt;
+*gross income;
+*Profit before tax;
+*gdp change.
+Response variable is gdp change.
+
+```{r}
+# import US GDP data set
+df <- read.csv("~/DS 6373 Time Series/TS Project2021/data/usgdp.csv")
+df %>%  glimpse()
+```
+
+
+```{r}
+# remove empty data, then plot dgp.change column. We may some outliers in the year 2020, which was during the COVID period. 
+df <- na.omit(df)
+plot(df$gdp.change)
+
+```
+```{r}
+# We decided to get rid of the outlier which was affected by the COVID in the year 2020. Therefore, we deleted the data from the year 2020.
+data <-head(df,-4)
+plot(data$gdp.change)
+```
+
+
+```{r}
+# matrix of scatter plots to check all of variables' correlation. It doesn't show much correlation between gdp change and other 4 variables.However, the top two important variables are GDP.PER.CAPITA and Income.receipt with correlation of -0.2 and -0.194
+head(data)
+ggpairs(data[2:6]) #matrix of scatter plots
+```
+
+
+#  ***check data stationarity ***
+```{r, echo=FALSE}
+#plot 75 years GDP Percent change from preceding period quarterly
+plotts.sample.wge(data$gdp.change)
+
+```
+
+
+#  ***Condition 1: Constant Mean ***
+
+* Wandering and oscillating behavior
+* Only one realization not knowing much
+* The assumption of constant mean seems like not appear to be violated.
+
+
+#  ***Condition 2: Constant Variance ***
+It is tough to confirm whether there is constant variance since we only have one realization. It seems like there is some tendency to make big jumps at the end of the period, indicating non-constant variance over time.
+
+
+# ***Condition 3: Constant Autocorrelation ***
+The first half of acf seems like little different from the second half of acf, but not much.
+```{r}
+# check the 1st half of acf for condition 3
+acf(data$gdp.change[1:146])
+```
+```{r}
+# check the 2nd half of acf for condition 3
+acf(data$gdp.change[147:292])
+```
+
+
+#  ***Conclusion***
+* Based on the above analysis, there is some evidence showing non-stationary.  But GDP change might be possibly stationary in the long term. We will analyze it using both stationary and non-stationary models.
+
+
+#  ***Stationary model***
+
+```{r}
+# AIC selects ARMA(4,3) but BIC picks ARMA(0,2) showing ARMA(4,3) and ARMA(0,2) might be good fitting stationary models. 
+aic5.wge(data$gdp.change, p=0:5, q=0:5)
+```
+
+```{r}
+aic5.wge(data$gdp.change,type = "bic", p=0:5, q=0:5)
+```
+```{r}
+aic5.wge(data$gdp.change,type = "aic", p=0:5, q=0:5)
+```
+
+
+# ***Model ID ARMA(4,3)***
+
+
+```{r}
+#aic pick ARMA(4,3), I'll test Stationary model ARMA(4,3)
+
+ARMA43 = est.arma.wge(data$gdp.change,p=4,q=3)
+```
+```{r}
+ljung.wge(ARMA43$res)
+ljung.wge(ARMA43$res, K = 48)
+f_ARMA43 = fore.arma.wge(data$gdp.change,phi = ARMA43$phi,n.ahead = 12,limits = F, lastn = T)
+f_ARMA43short = fore.arma.wge(data$gdp.change,phi = ARMA43$phi,n.ahead = 2,limits = F, lastn = T)
+
+```
+
+
+```{r}
+ASE_ARMA43 = mean((data$gdp.change[(length(data$gdp.change)-11):length(data$gdp.change)] - f_ARMA43$f)^2)
+
+ASE_ARMA43
+
+ASE_ARMA43short = mean((data$gdp.change[(length(data$gdp.change)-1):length(data$gdp.change)] - f_ARMA43short$f)^2)
+
+ASE_ARMA43short
+```
+
+
+```{r}
+
+
+#Compare Spectral Densities
+sims = 5
+SpecDen = parzen.wge(data$gdp.change, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+   SpecDen2 = parzen.wge(gen.arma.wge(297, phi = ARMA43$phi, plot ="FALSE"), plot = "FALSE")
+   lines(SpecDen2$freq,SpecDen2$pzgram, lwd = 2, col = "red")
+}
+
+```
+
+```{r}
+
+#Compare ACFs
+sims = 5
+ACF = acf(data$gdp.change, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+   ACF2 = acf(gen.arma.wge(297, phi = ARMA43$phi, plot = "FALSE"), plot = "FALSE")
+   lines(ACF2$lag ,ACF2$acf, lwd = 2, col = "red")
+}
+```
+
+
+```{r}
+
+#Compare Generated Realizations 
+
+
+ARMA43gen = gen.arma.wge(297,phi = ARMA43$phi, vara = ARMA43$avar)
+
+plotts.sample.wge(ARMA43gen)
+```
+
+
+#  ***Non-stationary model***
+```{r}
+x=data$gdp.change
+#difference the data
+xd1.dif=artrans.wge(x,phi.tr=1)
+#xd1.dif is the differenced data
+plotts.sample.wge(xd1.dif)
+```
+
+
+```{r}
+#run aic5.wge with difference data, it selects ARMA(5,1)
+aic5.wge(xd1.dif,type = "bic")
+```
+```{r}
+aic5.wge(xd1.dif,type = "aic")
+```
+```{r}
+# AIC and BIC picks p=5, q=1
+fitarima=arima(data$gdp.change,order=c(5,1,1),xreg=cbind(data$GDP.per.capita,data$Income.receipt,data$gross.income))
+fitarima
+AIC(fitarima) #1718.626
+```
+
+# ***Model ID ARIMA(5,1,1)***
+
+```{r}
+
+# we get ARIMA(5,1,1)
+ARIMA51= est.arma.wge(xd1.dif,p = 5, q=1)
+
+```
+```{r}
+ljung.wge(ARIMA51$res)
+ljung.wge(ARIMA51$res, K = 48)
+f_arima511=fore.arma.wge(data$gdp.change,phi=ARIMA51$phi,n.ahead = 12,limits = F, lastn = T)
+f_arima511short=fore.arma.wge(data$gdp.change,phi=ARIMA51$phi,n.ahead = 2,limits = F, lastn = T)
+
+
+ASElong = mean((data$gdp.change[(length(data$gdp.change)-11):length(data$gdp.change)] - f_arima511$f)^2)
+
+ASElong
+
+ASEshort = mean((data$gdp.change[(length(data$gdp.change)-1):length(data$gdp.change)] - f_arima511short$f)^2)
+
+ASEshort
+```
+
+
+```{r}
+ASE = mean((data$gdp.change[(length(data$gdp.change)-11):length(data$gdp.change)] - f_arima511$f)^2)
+
+ASE
+```
+```{r}
+#Compare Spectral Densities
+sims = 5
+SpecDen = parzen.wge(data$gdp.change, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+   SpecDen3= parzen.wge(gen.arma.wge(295, phi = ARIMA51$phi, plot ="FALSE"), plot = "FALSE")
+   lines(SpecDen3$freq,SpecDen3$pzgram, lwd = 2, col = "red")
+}
+```
+
+```{r}
+#Compare ARIMA51 ACFs
+sims = 5
+ACF = acf(data$gdp.change, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+   ACF2 = acf(gen.aruma.wge(319, phi = ARIMA51$phi, plot ="FALSE"), plot = "FALSE")
+   lines(ACF2$lag ,ACF2$acf, lwd = 2, col = "red")
+}
+```
+
+
+```{r}
+#Compare Generated Realizations 
+ARIMA51gen = gen.aruma.wge(297,phi = ARIMA51$phi, vara = ARIMA51$avar)
+plotts.sample.wge(ARIMA51gen)
+```
+
+# ***Model ID ARUMA(5,1,0) S=27***
+```{r}
+# overfit for seasonality, we get system frequency 0.02 associated with period 27. 
+plotts.sample.wge(x)
+est.ar.wge(data$gdp.change,p = 12) 
+factor.wge(data$gdp.change)
+```
+
+
+```{r}
+
+#Transform  data with “seasonal difference”, which appears to be stationary, we'll find a stationary model for this realization
+x=data$gdp.change
+# difference the data
+d1=artrans.wge(x,phi.tr=1)
+#we try seasonal model with s=27
+d1.27=artrans.wge(d1,phi.tr = c(rep(0,28),1))
+                
+```
+
+
+```{r}
+#Use tswge to model the transformed data, d1.27
+aic5.wge(d1.27,p=0:5,q=0:5)
+# aic picks an ARMA(5,0) as the first choice
+```
+
+
+```{r}
+#In order to see if a lower order model could satisfactorily model the data, we use BIC
+aic5.wge(d1.27,p=0:5,q=0:5,type='bic')
+#BIC picks ARMA(5,0) as the second choice,We decide to use the ARMA(5,0) model chosen by AIC and BIC
+```
+```{r}
+# AIC and BIC picks p=1,q=5
+fitaruma=arima(data$gdp.change,order=c(5,1,0),xreg=cbind(data$GDP.per.capita,data$Income.receipt,data$gross.income))
+fitaruma
+AIC(fitarima) 
+```
+
+```{r}
+#We estimate the parameters of the ARMA(5,0) model using est.ar.wge
+x_27_arma=est.ar.wge(d1.27, p=5)
+```
+
+
+
+```{r}
+ljung.wge(x_27_arma$res)
+ljung.wge(x_27_arma$res, K = 48)
+f_x27arma = fore.aruma.wge(data$gdp.change,s = 27,phi =x_27_arma$phi,n.ahead =12,limits = F, lastn = T)
+f_x27armashort = fore.aruma.wge(data$gdp.change,s = 27,phi =x_27_arma$phi,n.ahead =2,limits = F, lastn = T)
+
+ASE_x27arma= mean((data$gdp.change[(length(x)-11):length(x)] - f_x27arma$f)^2)
+
+ASE_x27arma
+
+ASE_x27arma_short= mean((data$gdp.change[(length(x)-1):length(x)] - f_x27armashort$f)^2)
+
+ASE_x27arma_short
+```
+```{r}
+#Compare Spectral Densities
+sims = 5
+SpecDen = parzen.wge(data$gdp.change, plot = "FALSE")
+plot(SpecDen$freq,SpecDen$pzgram, type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+   SpecDen4 = parzen.wge(gen.aruma.wge(297, phi = x_27_arma$phi,s=27, plot ="FALSE"), plot = "FALSE")
+   lines(SpecDen4$freq,SpecDen4$pzgram, lwd = 2, col = "red")
+}
+```
+
+
+```{r}
+#Compare ACFs
+sims = 5
+ACF = acf(data$gdp.change, plot = "FALSE")
+plot(ACF$lag ,ACF$acf , type = "l", lwd = 6)
+
+for( i in 1: sims)
+{
+   ACF5 = acf(gen.aruma.wge(297, phi = x_27_arma$phi,s=27, plot = "FALSE"), plot = "FALSE")
+   lines(ACF5$lag ,ACF5$acf, lwd = 2, col = "red")
+}
+```
+
+# ***Multivariate analysis: VAR Model***
+
+```{r}
+data2 = data[1:292,]
+gdpVar1 =VAR(cbind(data2$gdp.change,data2$GDP.per.capita,data2$Income.receipt), type="both", lag.max = 10)
+AIC(gdpVar1)  #7177.838
+preds_short = predict(gdpVar1,n.ahead = 2)
+ASE_var1_st = mean((data$gdp.change[291:292] - preds_short$fcst$y1[,1])^2)
+ASE_var1_st  #ASE for VAR model is 9.952455
+plot(seq(1,292,1), data$gdp.change[1:292], type = "l",xlim = c(0,292), ylab = "gdp change", main = "Short_term gdp change Forecast")
+lines(seq(291,292,1), preds_short$fcst$y1[,1], type = "l", col = "red")
+```
+
+```{r}
+# VAR Model long-term forecast last 24 with much less ASE and AIC than short-term
+data2 = data[1:268,]
+gdpVar1 = VAR(cbind(data2$gdp.change,data2$GDP.per.capita,data2$Income.receipt), type="both", lag.max = 10)
+AIC(gdpVar1)  
+preds = predict(gdpVar1,n.ahead = 24)
+ASEvar_lt=mean((data$gdp.change[269:292] - preds$fcst$y1[,1])^2)
+ASEvar_lt 
+plot(seq(1,292,1), data$gdp.change[1:292], type = "l",xlim = c(0,292), ylab = "gdp change", main = "Long_term gdp change Forecast")
+lines(seq(269,292,1), preds$fcst$y1[,1], type = "l", col = "red")
+
+```
+
+
+# ***Multivariate analysis:Neural network***
+
+
+```{r}
+
+# MLP fit with 5 hidden nodes and 20 repetitions.
+gdp.change=ts(data2$gdp.change)
+GDP.per.capita=ts(data2$GDP.per.capita)
+Income.receipt=ts(data2$Income.receipt)
+xVar=data.frame(GDP.per.capita,Income.receipt)
+set.seed(2)
+fit.mlp=mlp(gdp.change,xreg=xVar)
+fit.mlp
+```
+
+
+
+
+
+```{r}
+## MLP fit with 5 hidden nodes and 20 repetitions, forecast combined using the median operator, MSE=7.08
+xVar1=data.frame(GDP.per.capita=ts(data$GDP.per.capita),Income.receipt=ts(data$Income.receipt))
+plot(fit.mlp)
+## short-term forecast
+fore.mlp_short = forecast(fit.mlp, h=2,  xreg = xVar1)
+plot(fore.mlp_short)
+ASE_nn_st = mean((data$gdp.change[291:292] - fore.mlp_short$mean)^2)
+ASE_nn_st  
+#Plot short_term forecast
+plot(seq(1,292,1), data$gdp.change, type = "l",xlim = c(0,295), ylab = "gdp change", main = "Short_term GDP.Change Forecast from MLP")
+lines(seq(291,292,1), fore.mlp_short$mean, type = "l", col = "red")
+```
+```{r}
+## long-term forecast
+fore.mlp = forecast(fit.mlp, h=24,  xreg = xVar1)
+plot(fore.mlp)
+ASE_nn_lt= mean((data$gdp.change[269:292] - fore.mlp$mean)^2)
+ASE_nn_lt  
+#Plot long_term forecast
+plot(seq(1,292,1), data$gdp.change, type = "l",xlim = c(0,295), ylab = "gdp change", main = "Long_term  GDP.Change Forecast from MLP")
+lines(seq(269,292,1), fore.mlp$mean, type = "l", col = "red")
+```
+
+
+
+# ***Ensemble model ***
+
+```{r}
+# long term ensemble 
+ensemble  = (preds$fcst$y1[,1] + fore.mlp$mean)/2
+
+#Plot
+plot(seq(1,292,1), data$gdp.change, type = "l",xlim = c(0,292),  ylab = "gdp change", main = "Ensemble model long-term Forecast")
+lines(seq(269,292,1), y=ensemble, type = "l", col = "RED")
+ASE_ensemble = mean((data$gdp.change[269:292] - ensemble)^2)
+ASE_ensemble  
+```
+```{r}
+## short term ensemble model
+ensemble  = (preds_short$fcst$y1[,1] + fore.mlp_short$mean)/2
+
+#Plot
+plot(seq(1,292,1), data$gdp.change, type = "l",xlim = c(0,292),  ylab = "gdp change", main = "Ensemble model GDP.Change Forecast")
+lines(seq(291,292,1), y=ensemble, type = "l", col = "RED")
+ASE_ensemble = mean((data$gdp.change[291:292] - ensemble)^2)
+ASE_ensemble  #4.8
+
+```
+
+# ***Model Comparison***
+
+```{r}
+#For the short-term forecast, we may see ARIMA(5,1,0)  with s=27 shows better performance with lowest ASE 14.18755;
+#For the long-term forecast, the ensemble model shows the better performance with the lowest ASE 4.78.
+
+print(' *ARMA(4,3)      Short-term ASE 37.968,  Long-term ASE 6.879'  )
+print(' *ARIMA(5,1)     Short-term ASE 35.09,   Long-term ASE 6.515'  )
+print(' *ARUMA(5,1,0)   Short-term ASE 14.187,  Long-term ASE 6.365'  )
+print(' *VAR            Short-term ASE 25.895,  Long-term ASE 5.15'  )
+print(' *MLP            Short-term ASE 15.16,   Long-term ASE 6.27'  )
+print(' *Ensemble       Short-term ASE 16.259,  Long-term ASE 4.78'  )
+```
+
+# ***Summary***
+
+* GDP data is very difficult to predict, and models are not able to capture variance in this data.
+* For the short-term forecast, we may see ARIMA(5,1,0)  with s=27 shows better performance with lowest ASE 14.18755;
+* For the long-term forecast, the ensemble model shows the better performance with the lowest ASE 4.78.
+* After all, we can't simply say which model is better than the other as they perform differently in the different periods.
+
+
